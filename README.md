@@ -6,9 +6,8 @@ An implementation of skyboxes in vanilla minecraft.
 
 If you found this pack helpful, consider donating:
 
-|                                                             |                                                                                                 |
-| ----------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
 | [![kofi](./images/kofi.png)](https://ko-fi.com/balintcsala) | [![paypal](./images/paypal.png)](https://www.paypal.com/donate/?hosted_button_id=9CJYN7ETGZJPS) |
+| ----------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
 
 You're free to use the pack forever in return of a credit and link to this github repository on the distribution site. If these terms don't work for you, contact me on Discord (@balintcsala) or through GitHub.
 
@@ -46,6 +45,10 @@ Some packs require the moon to be solid instead of behaving additively. For this
 The example `sun.png` texture includes this feature if you need some reference.
 
 The solution doesn't support changing moon shapes and might be at a lower resolution, than the original texture (though you can counteract this by making the sun texture larger).
+
+By default instead of behaving fullbright object, the background will be averaged out behind the moon to act as a faux "ambient" term, to disable this effect, go to `assets/minecraft/shaders/include/config.glsl` and set `AVERAGE_MOON_LIGHTING` to `false`. On the image below this paragraph you can see the effect of an averaged background on the left versus a fully black background on the right.
+
+![Averaged lighting result comparison](./images/average_lighting.png)
 
 ### Return fog
 

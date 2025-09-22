@@ -3,6 +3,7 @@
 #moj_import <minecraft:dynamictransforms.glsl>
 #moj_import <minecraft:projection.glsl>
 #moj_import <minecraft:globals.glsl>
+#moj_import <minecraft:config.glsl>
 
 const float PI = 3.141592654;
 
@@ -80,43 +81,50 @@ void main() {
     vec3 playerPos = viewPos * mat3(ModelViewMat);
     vec3 rayDir = normalize(playerPos);
 
-    // Figure out which cubemaps to use
-    float currentTime = 1.0 - fract(atan(center.x, center.y) / PI * 0.5 + 0.5);
     ivec2 texSize = textureSize(Sampler0, 0);
     ivec2 cubemapSize = ivec2(texSize.x, texSize.x / 3 * 2);
     int cubemapCount = texSize.y / cubemapSize.y;
     int sunSize = texSize.y - cubemapCount * (cubemapSize.y + 1);
-
     vec2 uv = convertToCubemapUV(rayDir);
     ivec2 relativePixelCoord = ivec2(cubemapSize * uv);
 
+    // Figure out which cubemaps to use
+    float currentTime = 1.0 - fract(atan(center.x, center.y) / PI * 0.5 + 0.5);
+
     fragColor = vec4(1.0, 0.0, 1.0, 1.0);
     bool found = false;
-    for (int i = 0; i < cubemapCount; i++) {
-        int previousIndex = (i - 1 + cubemapCount) % cubemapCount;
-        int nextIndex = (i + 1) % cubemapCount;
 
-        float startTime = texelFetch(Sampler0, ivec2(0, sunSize + (1 + cubemapSize.y) * i), 0).r;
-        float nextStartTime = texelFetch(Sampler0, ivec2(0, sunSize + (1 + cubemapSize.y) * nextIndex), 0).r;
-        float interpolationEndTime = texelFetch(Sampler0, ivec2(1, sunSize + (1 + cubemapSize.y) * i), 0).r;
-
-        if (nextStartTime < startTime) {
-            nextStartTime += 1.0;
+    int currentIndex = -1;
+    float startTime;
+    for (int i = cubemapCount - 1; i >= 0; i--) {
+        startTime = texelFetch(Sampler0, ivec2(0, sunSize + (1 + cubemapSize.y) * i), 0).r;
+        if (currentTime > startTime) {
+            currentIndex = i;
+            break;
         }
-        if (currentTime < startTime || currentTime > nextStartTime) {
-            continue;
+    }
+    float interpolationEndTime;
+    if (currentIndex == -1) {
+        // We're before the first skybox, use the last one
+        currentIndex = cubemapCount - 1;
+        startTime = texelFetch(Sampler0, ivec2(0, sunSize + (1 + cubemapSize.y) * currentIndex), 0).r;
+        interpolationEndTime = texelFetch(Sampler0, ivec2(1, sunSize + (1 + cubemapSize.y) * currentIndex), 0).r;
+        if (interpolationEndTime > startTime) {
+            interpolationEndTime -= 1.0;
         }
-
-        found = true;
-        vec3 previousValue = texelFetch(Sampler0, ivec2(0, sunSize + (1 + cubemapSize.y) * previousIndex + 1) + relativePixelCoord, 0).rgb;
-        vec3 currentValue = texelFetch(Sampler0, ivec2(0, sunSize + (1 + cubemapSize.y) * i + 1) + relativePixelCoord, 0).rgb;
-        fragColor.rgb = mix(previousValue, currentValue, clamp((currentTime - startTime) / (interpolationEndTime - startTime), 0.0, 1.0));
+        startTime -= 1.0;
+    } else {
+        interpolationEndTime = texelFetch(Sampler0, ivec2(1, sunSize + (1 + cubemapSize.y) * currentIndex), 0).r;
     }
 
-    if (!found) {
-        // We're before the first start time, we should use the last cubemap for this
-        fragColor.rgb = texelFetch(Sampler0, ivec2(0, sunSize + (1 + cubemapSize.y) * (cubemapCount - 1) + 1) + relativePixelCoord, 0).rgb;
-    }
+    float interpolationFactor = clamp((currentTime - startTime) / (interpolationEndTime - startTime), 0.0, 1.0);
+
+    int previousIndex = (currentIndex - 1 + cubemapCount) % cubemapCount;
+    ivec2 previousBaseCoord = ivec2(0, sunSize + (1 + cubemapSize.y) * previousIndex + 1);
+    ivec2 currentBaseCoord =  ivec2(0, sunSize + (1 + cubemapSize.y) * currentIndex + 1);
+    vec3 previousValue = texelFetch(Sampler0, previousBaseCoord + relativePixelCoord, 0).rgb;
+    vec3 currentValue =  texelFetch(Sampler0,  currentBaseCoord + relativePixelCoord, 0).rgb;
+    fragColor.rgb = mix(previousValue, currentValue, clamp(interpolationFactor, 0.0, 1.0));
 
     // Raytrace the original sun
     vec3 normal = normalize(cross(pos1 - pos2, pos3 - pos2));
@@ -135,7 +143,7 @@ void main() {
         }
     }
 
-    // Moon should be solid, rayttrace it as well
+    // Moon should be solid, raytrace it as well
     normal *= -1;
     center *= -1;
     t = rayPlane(vec3(0.0), rayDir, center, normal);
@@ -151,11 +159,29 @@ void main() {
         // Rotate the uv to match up with the actual moon
         uv = uv * vec2(-1.0, -1.0) + vec2(1.0, 1.0);
         if (clamp(uv, 0.0, 1.0) == uv) {
-            // Check if the moon is solid at this point and discard the pixel, if it is
+            // Check if the moon is solid at this position
             vec4 moonColor = texelFetch(Sampler0, ivec2(uv * sunSize) + ivec2(sunSize, 0), 0);
-            if (moonColor.a > 0.1) {
-                discard;
+            if (moonColor.a < 0.1) {
+                // Not solid
+                return;
             }
+
+            vec3 ambientColor = vec3(0.0);
+            if (AVERAGE_MOON_LIGHTING) {
+                // Set background to average around this area
+                for (int x = -5; x <= 5; x++) {
+                    for (int y = -5; y <= 5; y++) {
+                        vec3 pos = hitPos + sideX * x * 0.3 / 5.0 + sideY * y * 0.3 / 5.0;
+                        vec2 uv = convertToCubemapUV(normalize(pos));
+                        ivec2 relativePixelCoord = ivec2(cubemapSize * uv);
+                        vec3 previousValue = texelFetch(Sampler0, previousBaseCoord + relativePixelCoord, 0).rgb;
+                        vec3 currentValue =  texelFetch(Sampler0,  currentBaseCoord + relativePixelCoord, 0).rgb;
+                        ambientColor += mix(previousValue, currentValue, clamp(interpolationFactor, 0.0, 1.0));
+                    }
+                }
+                ambientColor /= 11 * 11;
+            } 
+            fragColor = vec4(ambientColor, 1.0);
         }
     }
 }
