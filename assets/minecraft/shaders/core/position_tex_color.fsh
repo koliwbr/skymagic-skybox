@@ -8,6 +8,38 @@
 const float PI = 3.141592654;
 
 uniform sampler2D Sampler0;
+/*
+// ORYGINAL
+
+// Can't moj_import in things used during startup, when resource packs don't exist.
+// This is a copy of dynamicimports.glsl
+layout(std140) uniform DynamicTransforms {
+    mat4 ModelViewMat;
+    vec4 ColorModulator;
+    vec3 ModelOffset;
+    mat4 TextureMat;
+    float LineWidth;
+};
+
+uniform sampler2D Sampler0;
+
+in vec2 texCoord0;
+in vec4 vertexColor;
+
+out vec4 fragColor;
+
+void main() {
+    vec4 color = texture(Sampler0, texCoord0) * vertexColor;
+    if (color.a == 0.0) {
+        discard;
+    }
+    fragColor = color * ColorModulator;
+}
+
+
+*/
+
+
 
 in vec2 texCoord0;
 in vec4 vertexColor;
@@ -124,7 +156,8 @@ void main() {
     ivec2 currentBaseCoord =  ivec2(0, sunSize + (1 + cubemapSize.y) * currentIndex + 1);
     vec3 previousValue = texelFetch(Sampler0, previousBaseCoord + relativePixelCoord, 0).rgb;
     vec3 currentValue =  texelFetch(Sampler0,  currentBaseCoord + relativePixelCoord, 0).rgb;
-    fragColor.rgb = mix(previousValue, currentValue, clamp(interpolationFactor, 0.0, 1.0));
+    // fragColor.rgb = mix(previousValue, currentValue, clamp(interpolationFactor, 0.0, 1.0));
+    fragColor.rgb = mix(currentValue, currentValue, 1.0);
 
     // Raytrace the original sun
     vec3 normal = normalize(cross(pos1 - pos2, pos3 - pos2));
